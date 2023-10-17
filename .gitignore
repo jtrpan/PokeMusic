@@ -1,2 +1,6 @@
+# General
 .idea/
+.DS_Store
+
+# Music Files (too large)
 music/
