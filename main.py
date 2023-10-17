@@ -3,12 +3,10 @@ import numpy as np
 import cv2
 import pytesseract
 import platform
+import Quartz
+import pygetwindow as gw
 from random import choice
 from screeninfo import get_monitors
-
-monitor = get_monitors()[0]  # Get the primary monitor
-screen_width = monitor.width
-screen_height = monitor.height
 
 # Map each gameplay situation to its corresponding music files
 music_files = {
@@ -38,6 +36,23 @@ def get_platform():
         # macOS-specific code
         # pytesseract.pytesseract.tesseract_cmd = r'/usr/local/bin/tesseract'
         pytesseract.pytesseract.tesseract_cmd = r'/opt/homebrew/bin/tesseract'
+
+
+def get_vba_window():
+    window_list = Quartz.CGWindowListCopyWindowInfo(Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID)
+    for window in window_list:
+        window_title = window.get('kCGWindowName', 'Unknown')
+        if "VisualBoyAdvance" in window_title:
+            return window  # return the actual window object, not just the title
+    return None  # return None if no such window is found
+
+
+def default_vba_window():
+    monitor = get_monitors()[0]  # Get the primary monitor
+    screen_width = monitor.width
+    screen_height = monitor.height
+    bbox = (0, screen_height // 2, screen_width // 2, screen_height)
+    return bbox
 
 
 def play_music(situation):
@@ -120,15 +135,46 @@ def main():
         print('Manual control selected.')
     while True:
         if playerMode == 0:
-            auto_bbox = (0, screen_height // 2, screen_width, screen_height)
+            vba_window = get_vba_window()
+            if vba_window:
+                # The window details are in the dictionary, under the 'kCGWindowBounds' key
+                bounds = vba_window.get('kCGWindowBounds')
+                x = int(bounds['X'])
+                y = int(bounds['Y'])
+                width = int(bounds['Width'])
+                height = int(bounds['Height'])
+                auto_bbox = (x, y, x + width, y + height)
+            else:
+                print("No VisualBoyAdvance window found")
+                # Handle the case where the window is not found, perhaps by waiting or exiting
+                auto_bbox = default_vba_window()
+
             img = ImageGrab.grab(bbox=auto_bbox)  # bbox specifies specific region (bbox= x,y,width,height)
+
+            # Convert PIL image to OpenCV format
             img_np = np.array(img)
+            img_np = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+
+            # Draw a rectangle around the region you're capturing for debugging
+            cv2.rectangle(img_np, (0, 0), (auto_bbox[2] - auto_bbox[0], auto_bbox[3] - auto_bbox[1]), (0, 255, 0), 2)
+
+            # Display the original image with the rectangle
+            cv2.imshow("Original with BBox", img_np)
             frame = cv2.cvtColor(img_np, cv2.COLOR_BGR2GRAY)
-            processed_img = cv2.Canny(frame, threshold1=100, threshold2=350)
-            vertices = np.array([[20, 900], [20, 660], [1000, 660], [1000, 900],
-                                 ], np.int32)
+
+            # Lowering the threshold values for Canny function
+            processed_img = cv2.Canny(frame, threshold1=50, threshold2=100)  # these values can be adjusted
+
+            # # Using thresholding instead of Canny
+            # ret, processed_img = cv2.threshold(frame, 127, 255, cv2.THRESH_BINARY)  # these values can be adjusted
+
+            vertices = np.array([[20, 900], [20, 660], [1000, 660], [1000, 900]], np.int32)
             processed_img = roi(processed_img, [vertices])
+
             cv2.imshow("Capture", processed_img)
+
+            # Add a waitKey to keep the window open
+            cv2.waitKey(1)
             # configurations
             config = '-l eng --oem 1 --psm 3'
             # PyTesseract
